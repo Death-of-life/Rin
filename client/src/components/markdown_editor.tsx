@@ -6,7 +6,12 @@ import Loading from 'react-loading';
 import { FlatInset, FlatTabButton } from "@rin/ui";
 import { useAlert } from "./dialog";
 import { useColorMode } from "../utils/darkModeUtils";
-import { buildMarkdownImage, uploadImageFile } from "../utils/image-upload";
+import {
+  buildMarkdownImage,
+  getImageUploadErrorKey,
+  type ImageUploadStage,
+  uploadImageFile,
+} from "../utils/image-upload";
 import { Markdown } from "./markdown";
 
 
@@ -71,8 +76,9 @@ export function MarkdownEditor({ content, setContent, placeholder = "> Write you
   const editorRef = useRef<editor.IStandaloneCodeEditor>();
   const isComposingRef = useRef(false);
   const [preview, setPreview] = useState<'edit' | 'preview' | 'comparison'>('edit');
-  const [uploading, setUploading] = useState(false);
+  const [uploadStage, setUploadStage] = useState<ImageUploadStage | null>(null);
   const { showAlert, AlertUI } = useAlert();
+  const uploading = uploadStage !== null;
 
   async function insertImage(
     file: File,
@@ -80,7 +86,9 @@ export function MarkdownEditor({ content, setContent, placeholder = "> Write you
     showAlert: (msg: string) => void,
   ) {
     try {
-      const result = await uploadImageFile(file);
+      const result = await uploadImageFile(file, {
+        onStage: setUploadStage,
+      });
       const editorInstance = editorRef.current;
       if (!editorInstance) return;
       editorInstance.executeEdits(undefined, [{
@@ -93,7 +101,7 @@ export function MarkdownEditor({ content, setContent, placeholder = "> Write you
       }]);
     } catch (error) {
       console.error(error);
-      showAlert(error instanceof Error ? error.message : t("upload.failed"));
+      showAlert(t(getImageUploadErrorKey(error)));
     }
   }
 
@@ -289,20 +297,21 @@ export function MarkdownEditor({ content, setContent, placeholder = "> Write you
   ];
 
   const handlePaste = async (event: React.ClipboardEvent<HTMLDivElement>) => {
+    if (uploading) return;
     const clipboardData = event.clipboardData;
     if (clipboardData.files.length === 1) {
       const editor = editorRef.current;
       if (!editor) return;
       editor.trigger(undefined, "undo", undefined);
-      setUploading(true);
+      setUploadStage("reading");
       const myfile = clipboardData.files[0] as File;
       const selection = editor.getSelection();
       if (!selection) {
-        setUploading(false);
+        setUploadStage(null);
         return;
       }
       void insertImage(myfile, selection, showAlert).finally(() => {
-        setUploading(false);
+        setUploadStage(null);
       });
     }
   };
@@ -313,24 +322,16 @@ export function MarkdownEditor({ content, setContent, placeholder = "> Write you
     
     const upChange = (event: React.ChangeEvent<HTMLInputElement>) => {
       const files = event.currentTarget.files;
-      if (!files) return;
+      const file = files?.[0];
+      const editor = editorRef.current;
+      const selection = editor?.getSelection();
+      if (!file || !editor || !selection) return;
 
-      for (let i = 0; i < files.length; i++) {
-        const file = files[i];
-        if (file.size > 5 * 1024000) {
-          showAlert(t("upload.failed$size", { size: 5 }));
-          uploadRef.current!.value = "";
-        } else {
-          const editor = editorRef.current;
-          if (!editor) return;
-          const selection = editor.getSelection();
-          if (!selection) return;
-          setUploading(true);
-          void insertImage(file, selection, showAlert).finally(() => {
-            setUploading(false);
-          });
-        }
-      }
+      setUploadStage("reading");
+      void insertImage(file, selection, showAlert).finally(() => {
+        setUploadStage(null);
+        uploadRef.current!.value = "";
+      });
     };
     
     return (
@@ -340,7 +341,7 @@ export function MarkdownEditor({ content, setContent, placeholder = "> Write you
           onChange={upChange}
           className="hidden"
           type="file"
-          accept="image/gif,image/jpeg,image/jpg,image/png"
+          accept="image/avif,image/gif,image/jpeg,image/png,image/webp"
         />
         <MarkdownToolButton
           label={label}
@@ -424,7 +425,9 @@ export function MarkdownEditor({ content, setContent, placeholder = "> Write you
         {uploading &&
           <div className="flex flex-row items-center space-x-2 px-2">
             <Loading type="spin" color="#FC466B" height={16} width={16} />
-            <span className="text-sm text-neutral-500">{t('uploading')}</span>
+            <span className="text-sm text-neutral-500">
+              {uploadStage ? t(`upload.image.stage.${uploadStage}`) : t("uploading")}
+            </span>
           </div>
         }
       </FlatInset>
@@ -434,17 +437,16 @@ export function MarkdownEditor({ content, setContent, placeholder = "> Write you
             className={"relative min-h-0 overflow-hidden rounded-none border-0 bg-w"}
             onDrop={(e) => {
               e.preventDefault();
+              if (uploading) return;
               const editor = editorRef.current;
               if (!editor) return;
-              for (let i = 0; i < e.dataTransfer.files.length; i++) {
-                const selection = editor.getSelection();
-                if (!selection) return;
-                const file = e.dataTransfer.files[i];
-                setUploading(true);
-                void insertImage(file, selection, showAlert).finally(() => {
-                  setUploading(false);
-                });
-              }
+              const selection = editor.getSelection();
+              const file = e.dataTransfer.files[0];
+              if (!selection || !file) return;
+              setUploadStage("reading");
+              void insertImage(file, selection, showAlert).finally(() => {
+                setUploadStage(null);
+              });
             }}
             onPaste={handlePaste}
           >

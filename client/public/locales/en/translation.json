@@ -552,8 +552,22 @@
       "drag_drop": "Drag an image here, or click to choose one",
       "drag_hint": "You can also paste an image URL directly",
       "drop_now": "Drop to upload the image",
+      "errors": {
+        "animated": "Animated images are not supported. Please upload a static image",
+        "encode_failed": "Image compression failed. Please try another image",
+        "invalid_image": "The image is damaged or could not be read",
+        "invalid_type": "Only JPEG, PNG, WebP, AVIF, and static GIF images are supported",
+        "output_too_large": "The compressed image is still larger than 5 MB. Please resize it and try again",
+        "source_too_large": "The source image exceeds the allowed size",
+        "unsupported": "This browser cannot compress AVIF images. Please update your browser"
+      },
       "invalid_type": "Please upload an image file",
       "preview_alt": "Image preview",
+      "stage": {
+        "compressing": "Compressing to AVIF",
+        "reading": "Reading image",
+        "uploading": "Uploading AVIF"
+      },
       "url_placeholder": "Enter an image URL, or upload an image"
     },
     "title": "Upload"

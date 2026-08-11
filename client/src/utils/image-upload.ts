@@ -1,13 +1,49 @@
 import { client } from "../app/runtime";
+import { encodeImageDataAsAvif } from "./avif-compression";
 import { encodeBlurhash } from "./blurhash";
+import { isAnimatedImage } from "./image-animation";
 
 export const DEFAULT_IMAGE_MAX_FILE_SIZE = 5 * 1024 * 1024;
+export const AVIF_MAX_DIMENSION = 2560;
+export const AVIF_MAX_FILE_SIZE = 5 * 1024 * 1024;
+
+const SUPPORTED_IMAGE_TYPES = new Set([
+  "image/avif",
+  "image/gif",
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+]);
+
+export type ImageUploadStage = "reading" | "compressing" | "uploading";
+
+export type ImageUploadOptions = {
+  maxSourceBytes?: number;
+  onStage?: (stage: ImageUploadStage) => void;
+};
+
+export type ImageUploadErrorCode =
+  | "animated"
+  | "encode_failed"
+  | "invalid_image"
+  | "invalid_type"
+  | "output_too_large"
+  | "source_too_large"
+  | "unsupported";
+
+export class ImageUploadError extends Error {
+  constructor(public code: ImageUploadErrorCode, message: string) {
+    super(message);
+    this.name = "ImageUploadError";
+  }
+}
 
 export type UploadedImageResult = {
   url: string;
   blurhash?: string;
   width?: number;
   height?: number;
+  compressedSize?: number;
 };
 
 type ImageMetadata = {
@@ -23,7 +59,26 @@ type MarkdownImageMetadataResult = {
 };
 
 export function isImageFile(file: File) {
-  return file.type.startsWith("image/");
+  return SUPPORTED_IMAGE_TYPES.has(file.type);
+}
+
+export function getImageUploadErrorKey(error: unknown) {
+  return error instanceof ImageUploadError
+    ? `upload.image.errors.${error.code}`
+    : "upload.failed";
+}
+
+export function calculateTargetDimensions(width: number, height: number, maxDimension = AVIF_MAX_DIMENSION) {
+  const longestSide = Math.max(width, height);
+  if (longestSide <= maxDimension) {
+    return { width, height };
+  }
+
+  const scale = maxDimension / longestSide;
+  return {
+    width: Math.max(1, Math.round(width * scale)),
+    height: Math.max(1, Math.round(height * scale)),
+  };
 }
 
 function toPositiveInteger(value?: string | null) {
@@ -97,6 +152,88 @@ async function loadImage(file: File) {
   } finally {
     URL.revokeObjectURL(objectUrl);
   }
+}
+
+function createBlurhash(canvas: HTMLCanvasElement) {
+  const longestSide = Math.max(canvas.width, canvas.height);
+  const scale = Math.min(1, 48 / longestSide);
+  const width = Math.max(1, Math.round(canvas.width * scale));
+  const height = Math.max(1, Math.round(canvas.height * scale));
+  const previewCanvas = document.createElement("canvas");
+  previewCanvas.width = width;
+  previewCanvas.height = height;
+  const context = previewCanvas.getContext("2d", { willReadFrequently: true });
+  if (!context) {
+    return undefined;
+  }
+
+  context.drawImage(canvas, 0, 0, width, height);
+  const imageData = context.getImageData(0, 0, width, height);
+  return encodeBlurhash(imageData.data, width, height, 4, 3);
+}
+
+async function compressImageFile(
+  file: File,
+  maxSourceBytes: number,
+  onStage?: (stage: ImageUploadStage) => void,
+) {
+  if (!isImageFile(file)) {
+    throw new ImageUploadError("invalid_type", "Unsupported image type");
+  }
+  if (file.size > maxSourceBytes) {
+    throw new ImageUploadError("source_too_large", "Source image is too large");
+  }
+  if (await isAnimatedImage(file)) {
+    throw new ImageUploadError("animated", "Animated images are not supported");
+  }
+
+  let image: HTMLImageElement;
+  try {
+    image = await loadImage(file);
+  } catch {
+    throw new ImageUploadError("invalid_image", "The image could not be decoded");
+  }
+
+  if (!image.naturalWidth || !image.naturalHeight) {
+    throw new ImageUploadError("invalid_image", "The image has invalid dimensions");
+  }
+
+  const dimensions = calculateTargetDimensions(image.naturalWidth, image.naturalHeight);
+  const canvas = document.createElement("canvas");
+  canvas.width = dimensions.width;
+  canvas.height = dimensions.height;
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  if (!context) {
+    throw new ImageUploadError("unsupported", "Canvas image processing is unavailable");
+  }
+
+  context.drawImage(image, 0, 0, dimensions.width, dimensions.height);
+  const blurhash = createBlurhash(canvas);
+  const imageData = context.getImageData(0, 0, dimensions.width, dimensions.height);
+
+  if (typeof Worker === "undefined" || typeof WebAssembly === "undefined") {
+    throw new ImageUploadError("unsupported", "This browser cannot encode AVIF images");
+  }
+
+  onStage?.("compressing");
+  let buffer: ArrayBuffer;
+  try {
+    buffer = await encodeImageDataAsAvif(imageData);
+  } catch {
+    throw new ImageUploadError("encode_failed", "AVIF encoding failed");
+  }
+
+  if (buffer.byteLength > AVIF_MAX_FILE_SIZE) {
+    throw new ImageUploadError("output_too_large", "Compressed AVIF is too large");
+  }
+
+  const baseName = file.name.replace(/\.[^.]+$/, "").replace(/[^a-zA-Z0-9._-]+/g, "-") || "image";
+  return {
+    file: new File([buffer], `${baseName}.avif`, { type: "image/avif" }),
+    blurhash,
+    width: dimensions.width,
+    height: dimensions.height,
+  };
 }
 
 async function loadImageFromUrl(url: string) {
@@ -246,19 +383,17 @@ export async function enrichMarkdownImageMetadata(content: string): Promise<Mark
   };
 }
 
-export async function uploadImageFile(file: File): Promise<UploadedImageResult> {
-  const [uploadResult, metadataResult] = await Promise.allSettled([
-    client.storage.upload(file, file.name),
-    generateImageMetadata(file),
-  ]);
+export async function uploadImageFile(
+  file: File,
+  options: ImageUploadOptions = {},
+): Promise<UploadedImageResult> {
+  const maxSourceBytes = options.maxSourceBytes ?? DEFAULT_IMAGE_MAX_FILE_SIZE;
+  options.onStage?.("reading");
 
-  if (uploadResult.status === "rejected") {
-    throw uploadResult.reason instanceof Error
-      ? uploadResult.reason
-      : new Error("Upload failed");
-  }
+  const compressed = await compressImageFile(file, maxSourceBytes, options.onStage);
 
-  const { data, error } = uploadResult.value;
+  options.onStage?.("uploading");
+  const { data, error } = await client.storage.upload(compressed.file, compressed.file.name);
   if (error) {
     throw new Error(error.value);
   }
@@ -274,6 +409,9 @@ export async function uploadImageFile(file: File): Promise<UploadedImageResult> 
 
   return {
     url,
-    ...(metadataResult.status === "fulfilled" ? metadataResult.value : {}),
+    blurhash: compressed.blurhash,
+    width: compressed.width,
+    height: compressed.height,
+    compressedSize: compressed.file.size,
   };
 }

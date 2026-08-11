@@ -11,6 +11,12 @@ export default defineConfig(({ mode }) => {
   
   return {
     cacheDir,
+    optimizeDeps: {
+      exclude: ["@jsquash/avif"],
+    },
+    worker: {
+      format: "es",
+    },
     // Note: Client configuration is fetched from server at runtime
     // No environment variables are injected at build time
     build: {

@@ -6,6 +6,17 @@ import type { Variables, JWTUtils, CacheImpl } from "../../core/hono-types";
 import { createMockDB, createMockEnv, cleanupTestDB } from '../../../tests/fixtures';
 import type { Database } from 'bun:sqlite';
 
+function createAvifFile(name = 'test.avif', animated = false, payload = 'test') {
+    const bytes = new Uint8Array(24 + payload.length);
+    const view = new DataView(bytes.buffer);
+    view.setUint32(0, 24, false);
+    bytes.set(new TextEncoder().encode('ftyp'), 4);
+    bytes.set(new TextEncoder().encode(animated ? 'avis' : 'avif'), 8);
+    bytes.set(new TextEncoder().encode('mif1avif'), 16);
+    bytes.set(new TextEncoder().encode(payload), 24);
+    return new File([bytes], name, { type: 'image/avif' });
+}
+
 // Simple cache implementation for tests
 class TestCacheImpl implements CacheImpl {
     private data = new Map<string, any>();
@@ -176,20 +187,29 @@ describe('StorageService', () => {
 
             const r2App = createAppWithEnv(r2Env, 1);
             const formData = new FormData();
-            formData.append('key', 'test.txt');
-            formData.append('file', new File(['test content'], 'test.txt', { type: 'text/plain' }));
+            formData.append('key', 'untrusted.png');
+            formData.append('file', createAvifFile());
 
             const res = await r2App.request('/', {
                 method: 'POST',
                 body: formData,
             }, r2Env);
 
+            const duplicateFormData = new FormData();
+            duplicateFormData.append('file', createAvifFile('duplicate.avif'));
+            const duplicateRes = await r2App.request('/', {
+                method: 'POST',
+                body: duplicateFormData,
+            }, r2Env);
+
             expect(res.status).toBe(200);
-            expect(putCalls).toHaveLength(1);
-            expect(putCalls[0]?.key).toMatch(/^images\/[a-f0-9]+\.txt$/);
-            expect(putCalls[0]?.type).toBe('text/plain;charset=utf-8');
+            expect(duplicateRes.status).toBe(200);
+            expect(putCalls).toHaveLength(2);
+            expect(putCalls[0]?.key).toBe(putCalls[1]?.key);
+            expect(putCalls[0]?.key).toMatch(/^images\/[a-f0-9]{64}\.avif$/);
+            expect(putCalls[0]?.type).toBe('image/avif');
             const payload = await res.json() as { url: string };
-            expect(payload.url).toMatch(/^https:\/\/images\.example\.com\/images\/[a-f0-9]+\.txt$/);
+            expect(payload.url).toMatch(/^https:\/\/images\.example\.com\/images\/[a-f0-9]{64}\.avif$/);
         });
 
         it('should return an /api/blob URL when R2 is configured without S3_ACCESS_HOST', async () => {
@@ -220,8 +240,7 @@ describe('StorageService', () => {
 
             const r2App = createAppWithEnv(r2Env, 1);
             const formData = new FormData();
-            formData.append('key', 'test.txt');
-            formData.append('file', new File(['test'], 'test.txt', { type: 'text/plain' }));
+            formData.append('file', createAvifFile());
 
             const res = await r2App.request('/', {
                 method: 'POST',
@@ -232,7 +251,59 @@ describe('StorageService', () => {
             expect(putCalls).toHaveLength(1);
 
             const payload = await res.json() as { url: string };
-            expect(payload.url).toMatch(/^http:\/\/localhost\/api\/blob\/images\/[a-f0-9]+\.txt$/);
+            expect(payload.url).toMatch(/^http:\/\/localhost\/api\/blob\/images\/[a-f0-9]{64}\.avif$/);
+        });
+
+        it('should reject non-AVIF uploads', async () => {
+            const r2App = createAppWithEnv(env, 1);
+            const formData = new FormData();
+            formData.append('file', new File(['image'], 'test.png', { type: 'image/png' }));
+
+            const res = await r2App.request('/', { method: 'POST', body: formData }, env);
+
+            expect(res.status).toBe(400);
+            expect(await res.text()).toBe('Only AVIF images are accepted');
+        });
+
+        it('should reject requests without a file', async () => {
+            const r2App = createAppWithEnv(env, 1);
+            const res = await r2App.request('/', {
+                method: 'POST',
+                body: new FormData(),
+            }, env);
+
+            expect(res.status).toBe(400);
+            expect(await res.text()).toBe('No AVIF image uploaded');
+        });
+
+        it('should reject invalid and animated AVIF uploads', async () => {
+            const r2App = createAppWithEnv(env, 1);
+
+            for (const file of [
+                new File(['not avif'], 'invalid.avif', { type: 'image/avif' }),
+                createAvifFile('animated.avif', true),
+            ]) {
+                const formData = new FormData();
+                formData.append('file', file);
+                const res = await r2App.request('/', { method: 'POST', body: formData }, env);
+                expect(res.status).toBe(400);
+                expect(await res.text()).toBe('Invalid or animated AVIF image');
+            }
+        });
+
+        it('should reject AVIF uploads larger than 5 MB', async () => {
+            const r2App = createAppWithEnv(env, 1);
+            const formData = new FormData();
+            formData.append('file', new File(
+                [new Uint8Array(5 * 1024 * 1024 + 1)],
+                'large.avif',
+                { type: 'image/avif' },
+            ));
+
+            const res = await r2App.request('/', { method: 'POST', body: formData }, env);
+
+            expect(res.status).toBe(400);
+            expect(await res.text()).toBe('AVIF image exceeds the 5 MB limit');
         });
 
         it('should return 500 when S3_ENDPOINT is not defined without R2 binding', async () => {
@@ -242,8 +313,7 @@ describe('StorageService', () => {
             const appNoS3 = createAppWithEnv(envNoS3, 1);
 
             const formData = new FormData();
-            formData.append('key', 'test.txt');
-            formData.append('file', new File(['test content'], 'test.txt', { type: 'text/plain' }));
+            formData.append('file', createAvifFile());
             
             const res = await appNoS3.request('/', {
                 method: 'POST',
@@ -261,8 +331,7 @@ describe('StorageService', () => {
             const appNoKey = createAppWithEnv(envNoKey, 1);
 
             const formData = new FormData();
-            formData.append('key', 'test.txt');
-            formData.append('file', new File(['test content'], 'test.txt', { type: 'text/plain' }));
+            formData.append('file', createAvifFile());
             
             const res = await appNoKey.request('/', {
                 method: 'POST',
@@ -317,6 +386,8 @@ describe('StorageService', () => {
 
             expect(res.status).toBe(200);
             expect(res.headers.get('content-type')).toBe('text/plain');
+            expect(res.headers.get('etag')).toBe('etag');
+            expect(res.headers.get('content-length')).toBe('4');
             expect(await res.text()).toBe('test');
         });
     });

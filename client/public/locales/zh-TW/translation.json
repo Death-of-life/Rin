@@ -552,8 +552,22 @@
       "drag_drop": "拖拽圖片到這裡，或點擊選擇圖片",
       "drag_hint": "也可以直接填寫圖片 URL",
       "drop_now": "放開以上傳圖片",
+      "errors": {
+        "animated": "暫不支援動圖，請上傳靜態圖片",
+        "encode_failed": "圖片壓縮失敗，請更換圖片後重試",
+        "invalid_image": "圖片已損壞或無法讀取",
+        "invalid_type": "僅支援 JPEG、PNG、WebP、AVIF 和靜態 GIF",
+        "output_too_large": "壓縮後的圖片仍超過 5 MB，請縮小圖片後重試",
+        "source_too_large": "原始圖片超過允許的大小",
+        "unsupported": "目前瀏覽器無法壓縮 AVIF 圖片，請升級瀏覽器後重試"
+      },
       "invalid_type": "請上傳圖片文件",
       "preview_alt": "圖片預覽",
+      "stage": {
+        "compressing": "正在壓縮為 AVIF",
+        "reading": "正在讀取圖片",
+        "uploading": "正在上傳 AVIF"
+      },
       "url_placeholder": "填寫圖片 URL，或上傳一張圖片"
     },
     "title": "上傳"

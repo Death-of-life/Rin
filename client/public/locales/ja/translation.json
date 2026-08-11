@@ -543,8 +543,22 @@
       "drag_drop": "ここに画像をドラッグするか、クリックして選択してください",
       "drag_hint": "画像 URL を直接入力することもできます",
       "drop_now": "ドロップして画像をアップロード",
+      "errors": {
+        "animated": "アニメーション画像には対応していません。静止画像を選択してください",
+        "encode_failed": "画像の圧縮に失敗しました。別の画像でお試しください",
+        "invalid_image": "画像が破損しているか読み取れません",
+        "invalid_type": "JPEG、PNG、WebP、AVIF、静止 GIF のみ対応しています",
+        "output_too_large": "圧縮後も 5 MB を超えています。画像を縮小して再度お試しください",
+        "source_too_large": "元画像が許可サイズを超えています",
+        "unsupported": "このブラウザでは AVIF 圧縮を利用できません。ブラウザを更新してください"
+      },
       "invalid_type": "画像ファイルをアップロードしてください",
       "preview_alt": "画像プレビュー",
+      "stage": {
+        "compressing": "AVIF に圧縮中",
+        "reading": "画像を読み込み中",
+        "uploading": "AVIF をアップロード中"
+      },
       "url_placeholder": "画像 URL を入力するか、画像をアップロードしてください"
     },
     "title": "アップロード"

@@ -3,6 +3,8 @@ import { useTranslation } from "react-i18next";
 import ReactLoading from "react-loading";
 import {
   DEFAULT_IMAGE_MAX_FILE_SIZE,
+  getImageUploadErrorKey,
+  type ImageUploadStage,
   isImageFile,
   uploadImageFile,
 } from "../utils/image-upload";
@@ -28,8 +30,9 @@ export function ImageUploadInput({
 }: ImageUploadInputProps) {
   const { t } = useTranslation();
   const inputRef = useRef<HTMLInputElement>(null);
-  const [uploading, setUploading] = useState(false);
+  const [uploadStage, setUploadStage] = useState<ImageUploadStage | null>(null);
   const [dragging, setDragging] = useState(false);
+  const uploading = uploadStage !== null;
 
   const shapeClass = shape === "circle" ? "rounded-full" : "rounded-2xl";
 
@@ -39,23 +42,26 @@ export function ImageUploadInput({
 
   const handleFile = async (file: File) => {
     if (!isImageFile(file)) {
-      showError(t("upload.image.invalid_type"));
+      showError(t("upload.image.errors.invalid_type"));
       return;
     }
 
     if (file.size > maxFileSize) {
-      showError(t("upload.failed$size", { size: Math.round(maxFileSize / 1024 / 1024) }));
+      showError(t("upload.image.errors.source_too_large"));
       return;
     }
 
-    setUploading(true);
+    setUploadStage("reading");
     try {
-      const result = await uploadImageFile(file);
+      const result = await uploadImageFile(file, {
+        maxSourceBytes: maxFileSize,
+        onStage: setUploadStage,
+      });
       onChange(result.url);
     } catch (error) {
-      showError(error instanceof Error ? error.message : t("upload.failed"));
+      showError(t(getImageUploadErrorKey(error)));
     } finally {
-      setUploading(false);
+      setUploadStage(null);
       if (inputRef.current) {
         inputRef.current.value = "";
       }
@@ -100,7 +106,7 @@ export function ImageUploadInput({
               className="inline-flex items-center gap-2 rounded-xl border border-black/10 bg-w px-3 py-2 text-sm t-primary transition-colors hover:border-black/20 disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/10 dark:hover:border-white/20"
             >
               <i className="ri-upload-2-line" aria-hidden="true" />
-              <span>{uploading ? t("uploading") : t("upload.title")}</span>
+              <span>{uploadStage ? t(`upload.image.stage.${uploadStage}`) : t("upload.title")}</span>
             </button>
             <button
               type="button"
@@ -157,7 +163,7 @@ export function ImageUploadInput({
       <input
         ref={inputRef}
         type="file"
-        accept="image/*"
+        accept="image/avif,image/gif,image/jpeg,image/png,image/webp"
         className="hidden"
         disabled={disabled || uploading}
         onChange={(event) => {
