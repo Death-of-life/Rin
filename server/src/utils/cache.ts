@@ -93,17 +93,15 @@ class DatabaseStorageProvider implements StorageProvider {
 
             const valueStr = typeof value === 'string' ? value : JSON.stringify(value);
 
-            if (existingKeys.has(key)) {
-                await this.db.update(cache)
-                    .set({ value: valueStr, updatedAt: new Date() })
-                    .where(and(eq(cache.key, key), eq(cache.type, this.type)));
-            } else {
-                await this.db.insert(cache).values({
-                    key,
-                    value: valueStr,
-                    type: this.type,
+            await this.db.insert(cache).values({
+                key,
+                value: valueStr,
+                type: this.type,
+            })
+                .onConflictDoUpdate({
+                    target: [cache.key, cache.type],
+                    set: { value: valueStr, updatedAt: new Date() },
                 });
-            }
         }
     }
 

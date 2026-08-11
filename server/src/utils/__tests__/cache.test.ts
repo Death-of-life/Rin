@@ -312,6 +312,23 @@ describe('CacheImpl - 数据库持久化测试', () => {
         expect(rows[0].value).toBe('value2');
     });
 
+    it('并发写入同一键时不应该触发唯一约束错误', async () => {
+        const firstCache = new CacheImpl(db as any, mockEnv, 'client.config', 'database');
+        const secondCache = new CacheImpl(db as any, mockEnv, 'client.config', 'database');
+
+        await Promise.all([
+            firstCache.set('site.name', 'First'),
+            secondCache.set('site.name', 'Second'),
+        ]);
+
+        const rows = await db.select().from(cache).where(and(
+            eq(cache.key, 'site.name'),
+            eq(cache.type, 'client.config'),
+        ));
+        expect(rows).toHaveLength(1);
+        expect(['First', 'Second']).toContain(rows[0].value);
+    });
+
     it('删除时应该从数据库中移除', async () => {
         await cacheImpl.set('key1', 'value1');
         await cacheImpl.delete('key1');
