@@ -17,6 +17,7 @@ export const CLIENT_CONFIG_DEFAULTS = new Map(
     "site.name": "Rin",
     "site.description": "A lightweight personal blogging system",
     "site.avatar": "",
+    "site.icp_number": "",
     "site.page_size": 5,
   }),
 );

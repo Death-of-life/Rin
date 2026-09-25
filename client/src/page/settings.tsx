@@ -218,6 +218,16 @@ export function Settings() {
             onError={showAlert}
           />
           <ItemInput
+            title={t("settings.site.icp_number.title")}
+            description={t("settings.site.icp_number.desc")}
+            configKeyTitle={t("settings.site.icp_number.label")}
+            value={String(clientConfig.get("site.icp_number") ?? "")}
+            placeholder={t("settings.site.icp_number.placeholder")}
+            onChange={(value) => {
+              setConfigValue("client", "site.icp_number", value);
+            }}
+          />
+          <ItemInput
             title={t("settings.site.page_size.title")}
             description={t("settings.site.page_size.desc")}
             configKeyTitle={t("settings.site.page_size.label")}

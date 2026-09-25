@@ -448,6 +448,12 @@
         "desc": "Set the avatar shown in the navigation bar by URL, upload, or drag and drop",
         "label": "Avatar URL"
       },
+      "icp_number": {
+        "title": "ICP Filing",
+        "desc": "Displayed at the bottom center of the homepage and linked to the MIIT filing system; leave blank to hide",
+        "label": "ICP Filing Number",
+        "placeholder": "Example: 京ICP备12345678号-1"
+      },
       "page_size": {
         "title": "Page Size",
         "desc": "Set the number of articles displayed per page in the list",

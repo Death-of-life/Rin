@@ -14,6 +14,7 @@ function Footer() {
     const [modeState, setModeState] = useState<ThemeMode>('system');
     const config = useContext(ClientConfigContext);
     const footerHtml = config.get<string>('footer');
+    const icpNumber = config.get<string>('site.icp_number')?.trim();
     const footerHtmlRef = useRef<HTMLDivElement | null>(null);
     const mountedScriptNodesRef = useRef<HTMLScriptElement[]>([]);
     const loginEnabled = config.getBoolean('login.enabled');
@@ -139,6 +140,11 @@ function Footer() {
                     <ThemeButton mode='system' current={modeState} label="Toggle system mode" icon="ri-computer-line" onClick={setMode} />
                     <ThemeButton mode='dark' current={modeState} label="Toggle dark mode" icon="ri-moon-line" onClick={setMode} />
                 </div>
+                {icpNumber && (
+                    <a className="text-sm text-neutral-500 hover:underline" href="https://beian.miit.gov.cn" target="_blank" rel="noopener noreferrer">
+                        {icpNumber}
+                    </a>
+                )}
             </div>
         </footer>
     );
